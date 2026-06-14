@@ -29,26 +29,38 @@ source "$SAILING_REPO/tooling/sailenv.sh"   # → SAILING_TRACKS_DIR
 2. Параметры лодки: прочитай `boats/<boat>.md` → `{upwind_twa, downwind_twa, hull_length_m}`.
 3. TWD: если в заметке есть `weather_actual.wind_dir_deg` — используй как `--twd`;
    иначе анализатор оценит из трека.
-4. Запусти анализатор:
+4. Запусти анализатор (метрики JSON):
 
 ```bash
 RACE_DIR="$SAILING_TRACKS_DIR/<slug>"
 PYTHONPATH="$SAILING_REPO/lib" python3 -m sailtrack.cli \
   "$RACE_DIR/files/track.gpx" \
   [--twd <weather_actual.wind_dir_deg>] \
-  --boat-json '{"upwind_twa":<u>,"downwind_twa":<d>,"hull_length_m":<h>}' \
-  --svg "$RACE_DIR/files/track-render.svg"
+  --boat-json '{"upwind_twa":<u>,"downwind_twa":<d>,"hull_length_m":<h>}'
 ```
 
 Возвращает JSON: `speed{max_kt,avg_kt}`, `wind{twd_deg,twd_source}`,
 `maneuvers{tacks,gybes,avg_tacking_angle_deg,list[]}`, `legs[]`, `groove_twa_std_deg`.
+
+4b. Сгенерируй **трек на спутнике** `files/track-map.svg` (спутник Esri + трек, раскраска
+по скорости, совмещены по координатам, с захватом берегов). Это заменяет внешний скриншот:
+
+```bash
+PYTHONPATH="$SAILING_REPO/lib" python3 -c "
+from sailtrack.pressuremap import build_track_on_satellite
+marks=[(53.97186,27.36117,'верх. знак','#1e90ff')]   # + ворота, если известны координаты
+build_track_on_satellite('$RACE_DIR/files/track.gpx','$RACE_DIR/files/track-map.svg',
+    view_pad_frac=0.5, marks=marks, label='трек по скорости (красный медленно→зелёный быстро)')
+"
+```
+(нужна сеть для тайлов Esri; при недоступности функция нарисует трек на простом фоне.)
 
 5. Через **Edit tool** между `<!-- sail:auto:start analysis -->` … `end` запиши:
    - сводку (дистанция nm, длительность, max/avg kt; TWD + источник);
    - таблицу поворотов (tacks/gybes, средний угол лавировки, заметные потери/восстановление из `list`);
    - таблицу ног (`type`, `duration_min`, `avg_speed_kt`, `avg_vmg_kt`, `% правый галс`);
    - groove (σ TWA на лавировке);
-   - встрой рендер: `![[files/track-render.svg]]`.
+   - встрой карту: `![[files/track-map.svg]]` (спутник + трек по скорости).
    Если `twd_source == "estimated"` — добавь пометку «TWD оценён из трека, ориентир».
 6. Через **Edit tool** обнови `track:` (tacks, gybes; duration_min/distance_nm/max_speed_kt/avg_speed_kt
    уже могли стоять от import — синхронизируй) и поставь `status: analyzed`.
