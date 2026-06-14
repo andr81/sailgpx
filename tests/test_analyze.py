@@ -4,7 +4,8 @@ from datetime import datetime, timedelta, timezone
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(HERE, "..", "lib"))
 from sailtrack.gpx import TrackPoint
-from sailtrack.analyze import analyze_track, estimate_twd, resample_1hz, derive_cog_sog
+from sailtrack.analyze import (analyze_track, estimate_twd, resample_1hz,
+                               derive_cog_sog, norm360, circ_mean)
 from sailtrack.render import render_svg
 
 fail = 0
@@ -38,12 +39,33 @@ def make_track():
 
 track = make_track()
 
-# --- оценка TWD ---
+# --- circular helpers ---
+check(norm360(360.0) == 0.0, "norm360(360)->0")
+cm = circ_mean([350, 10])
+check(cm is not None and (cm < 1 or cm > 359), f"circ_mean wrap ~0 got {cm}")
+
+# --- оценка TWD (смешанный трек: лавировка + спуск) ---
 twd = estimate_twd(derive_cog_sog(resample_1hz(track)))
 check(twd is not None, "twd estimated")
 if twd is not None:
     diff = min(abs(twd - 0), abs(twd - 360))
     check(diff <= 25, f"estimated TWD ~0 (N), got {twd}")
+
+# --- одномодовый трек (только спуск на юг) → TWD неоднозначен → None ---
+def make_downwind():
+    pts = []
+    lat, lon = 53.97, 27.38
+    t = datetime(2026, 6, 13, 9, 0, 0, tzinfo=timezone.utc)
+    for _ in range(300):
+        d_nm = 5.5 / 3600.0
+        lat += (d_nm / 60.0) * math.cos(math.radians(180))
+        lon += (d_nm / 60.0) * math.sin(math.radians(180)) / math.cos(math.radians(lat))
+        pts.append(TrackPoint(t, lat, lon, 5.5, 180))
+        t += timedelta(seconds=1)
+    return pts
+
+twd_pure = estimate_twd(derive_cog_sog(resample_1hz(make_downwind())))
+check(twd_pure is None, f"pure-downwind TWD ambiguous -> None, got {twd_pure}")
 
 # --- полный анализ ---
 res = analyze_track(track)   # без явного TWD → оценка

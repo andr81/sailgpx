@@ -14,7 +14,8 @@ from .gpx import TrackPoint, haversine_nm, MS_TO_KT  # noqa: F401
 
 
 def norm360(d: float) -> float:
-    return d % 360.0
+    r = d % 360.0
+    return 0.0 if r == 360.0 else r   # избегаем 360.0 из-за float-остатка
 
 
 def signed_diff(a: float, b: float) -> float:
@@ -87,8 +88,12 @@ def resample_1hz(points: List[TrackPoint]):
         lat = a.lat + (b.lat - a.lat) * f
         lon = a.lon + (b.lon - a.lon) * f
         sog = None
-        if has_speed and a.speed_kt is not None and b.speed_kt is not None:
-            sog = a.speed_kt + (b.speed_kt - a.speed_kt) * f
+        a_spd, b_spd = a.speed_kt, b.speed_kt
+        if has_speed and (a_spd is not None or b_spd is not None):
+            # nearest-fill, если у одного конца span нет скорости — иначе не дробим серию нулями
+            a_spd = a_spd if a_spd is not None else b_spd
+            b_spd = b_spd if b_spd is not None else a_spd
+            sog = a_spd + (b_spd - a_spd) * f
         out.append(Sample(t=float(k), lat=lat, lon=lon, sog=sog if sog is not None else 0.0, cog=None))
     return out
 
@@ -138,23 +143,28 @@ def derive_cog_sog(samples, compute_speed_if_missing=True):
 # --- ветер и углы -------------------------------------------------------
 
 
-def estimate_twd(samples) -> Optional[float]:
+def estimate_twd(samples, window: float = 85.0) -> Optional[float]:
     """Оценка TWD ('from') из трека: главная ось COG (axial tensor) + выбор конца
-    по меньшей средней скорости (апвинд медленнее)."""
+    по меньшей средней скорости (апвинд медленнее). Возвращает None, если трек
+    одномодовый (только лавировка ИЛИ только спуск/рич) — тогда различить концы
+    оси нельзя, и следует использовать weather_actual."""
     pairs = [(s.cog, s.sog) for s in samples if s.cog is not None and s.sog >= 0.5]
     if len(pairs) < 10:
         return None
-    # axial: усредняем удвоенный угол, взвешивая дистанцией (~ sog)
+    # axial: усредняем удвоенный угол, взвешивая скоростью (~ дистанцией)
     x = sum(w * cos(radians(2 * c)) for c, w in pairs)
     y = sum(w * sin(radians(2 * c)) for c, w in pairs)
-    axis = norm360(0.5 * degrees(atan2(y, x)))     # 0..360, но это ось (mod 180)
-    cand = [axis % 360, (axis + 180) % 360]
-    # выбрать конец, к которому боат идёт медленнее (апвинд)
+    axis = norm360(0.5 * degrees(atan2(y, x)))
+    cand = [axis % 360.0, (axis + 180.0) % 360.0]
+
     def mean_speed_toward(theta):
-        sel = [w for c, w in pairs if circ_abs_diff(c, theta) <= 50]
-        return sum(sel) / len(sel) if sel else 9e9
-    twd = min(cand, key=mean_speed_toward)   # апвинд COG ≈ TWD_from
-    return round(twd, 1)
+        sel = [w for c, w in pairs if circ_abs_diff(c, theta) <= window]
+        return sum(sel) / len(sel) if sel else None
+
+    m0, m1 = mean_speed_toward(cand[0]), mean_speed_toward(cand[1])
+    if m0 is None or m1 is None:
+        return None   # одномодовый трек — направление неоднозначно
+    return round(cand[0] if m0 <= m1 else cand[1], 1)   # медленный конец = апвинд = TWD_from
 
 
 def _classify(samples, twd, boat):
@@ -197,7 +207,8 @@ def detect_maneuvers(samples, debounce=5):
     def settled_cog(center, direction):
         """Устоявшийся COG в окне 3..13 c со сдвигом от границы поворота."""
         lo, hi = sorted((center + direction * 3, center + direction * 13))
-        chunk = [samples[k].cog for k in range(max(0, lo), min(len(samples), hi + 1))
+        chunk = [samples[k].cog
+                 for k in range(max(0, lo), max(0, min(len(samples), hi + 1)))
                  if samples[k].cog is not None]
         return circ_mean(chunk)
 
