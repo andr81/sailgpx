@@ -48,3 +48,20 @@
 
 - Дистанции — nm, скорости и ветер — kt, направления — градусы (0°=N).
 - Секция «Мысли и инсайты» — твоя, агент её не трогает.
+
+## Разработка и тесты
+
+- Библиотеки: `lib/sailtrack` (GPX-парсер, анализатор, SVG-рендер, CLI),
+  `lib/sailweather` (Open-Meteo мульти-модель + лог точности), `lib/sailrecall`
+  (ранжирование похожих гонок). Только stdlib Python 3 — внешних зависимостей нет.
+- Прогон тестов:
+  ```bash
+  bash tests/test_sailenv.sh && bash tests/test_install.sh
+  for t in gpx weather analyze recall; do python3 tests/test_$t.py; done
+  ```
+- Анализатор вручную: `PYTHONPATH=lib python3 -m sailtrack.cli <track.gpx> --svg out.svg`.
+
+## Статус
+
+Все скиллы реализованы (фаза 0–5). Будущее (см. спеку §9): polar-таблицы (Open 800),
+координаты знаков дистанции (VMC/огибания), %-of-polar, дополнительные провайдеры погоды.
