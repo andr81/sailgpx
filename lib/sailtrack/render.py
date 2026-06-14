@@ -9,10 +9,13 @@ from .gpx import TrackPoint
 
 
 def _color_by_speed(v: float, vmax: float) -> str:
+    """Красный (медленно) → жёлтый → зелёный (быстро)."""
     t = 0.0 if vmax <= 0 else max(0.0, min(1.0, v / vmax))
-    r = int(255 * t)
-    b = int(255 * (1 - t))
-    return f"#{r:02x}50{b:02x}"
+    if t < 0.5:                      # red → yellow
+        r, g = 255, int(255 * (t / 0.5))
+    else:                            # yellow → green
+        r, g = int(255 * (1 - (t - 0.5) / 0.5)), 200
+    return f"#{r:02x}{g:02x}00"
 
 
 def render_svg(points: List[TrackPoint], out_path: str, by: str = "speed",
@@ -49,7 +52,7 @@ def render_svg(points: List[TrackPoint], out_path: str, by: str = "speed",
         )
     start = f'<circle cx="{sx(xs[0]):.1f}" cy="{sy(ys[0]):.1f}" r="5" fill="#1a9850"/>'
     end = f'<circle cx="{sx(xs[-1]):.1f}" cy="{sy(ys[-1]):.1f}" r="5" fill="#222"/>'
-    legend = f'<text x="{pad}" y="{height - 6}" font-size="12" fill="#444">синий — медленно · красный — быстро (max {vmax:.1f} kt)</text>'
+    legend = f'<text x="{pad}" y="{height - 6}" font-size="12" fill="#444">красный — медленно · зелёный — быстро (max {vmax:.1f} kt)</text>'
     svg = (
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}"><rect width="{width}" height="{height}" fill="white"/>'
