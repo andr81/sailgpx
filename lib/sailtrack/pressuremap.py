@@ -55,14 +55,15 @@ def fetch_esri_png(x0, y0, x1, y1, w, h):
 
 
 def build_pressure_svg(grid_points, all_points, out_path, marks=None,
-                       nx=12, ny=8, min_n=8, width=1000, pad_frac=0.06,
+                       nx=12, ny=8, min_n=8, width=1000, view_pad_frac=0.6,
                        label="Среднее давление (скорость на лавировке, kt)"):
-    lats = [p[0] for p in all_points]
-    lons = [p[1] for p in all_points]
-    dla = (max(lats) - min(lats)) * pad_frac
-    dlo = (max(lons) - min(lons)) * pad_frac
-    la0, la1 = min(lats) - dla, max(lats) + dla
-    lo0, lo1 = min(lons) - dlo, max(lons) + dlo
+    # ВИД (спутник) — широкий, чтобы были видны берега
+    vlats = [p[0] for p in all_points]
+    vlons = [p[1] for p in all_points]
+    dla = (max(vlats) - min(vlats)) * view_pad_frac
+    dlo = (max(vlons) - min(vlons)) * view_pad_frac
+    la0, la1 = min(vlats) - dla, max(vlats) + dla
+    lo0, lo1 = min(vlons) - dlo, max(vlons) + dlo
     x0, y0 = merc(la0, lo0)
     x1, y1 = merc(la1, lo1)
     W = width
@@ -87,11 +88,15 @@ def build_pressure_svg(grid_points, all_points, out_path, marks=None,
         _, y = merc(lat, (lo0 + lo1) / 2)
         return (y1 - y) / (y1 - y0) * H
 
-    # сетка по close-hauled
+    # СЕТКА — по экстенту лавировочных точек (плотно, не растягиваем на весь вид)
+    glats = [p[0] for p in grid_points]
+    glons = [p[1] for p in grid_points]
+    gla0, gla1 = min(glats), max(glats)
+    glo0, glo1 = min(glons), max(glons)
     cells = {}
     for la, lo, v in grid_points:
-        cx = min(nx - 1, int((lo - lo0) / (lo1 - lo0) * nx))
-        cy = min(ny - 1, int((la - la0) / (la1 - la0) * ny))
+        cx = min(nx - 1, int((lo - glo0) / (glo1 - glo0 + 1e-9) * nx))
+        cy = min(ny - 1, int((la - gla0) / (gla1 - gla0 + 1e-9) * ny))
         cells.setdefault((cx, cy), []).append(v)
     means = {k: sum(v) / len(v) for k, v in cells.items() if len(v) >= min_n}
     if means:
@@ -99,26 +104,30 @@ def build_pressure_svg(grid_points, all_points, out_path, marks=None,
     else:
         vmin, vmax = 0.0, 1.0
 
+    def lbl(x, y, text, size=14):
+        # чёрный жирный текст с белым ореолом (paint-order) — читается на любом фоне
+        return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{size}" font-weight="bold" '
+                f'text-anchor="middle" paint-order="stroke" style="paint-order:stroke" '
+                f'fill="#000" stroke="#fff" stroke-width="3" stroke-linejoin="round">{text}</text>')
+
     rects = []
     for (cx, cy), v in means.items():
-        cl = lo0 + cx / nx * (lo1 - lo0)
-        cr = lo0 + (cx + 1) / nx * (lo1 - lo0)
-        cb = la0 + cy / ny * (la1 - la0)
-        ct = la0 + (cy + 1) / ny * (la1 - la0)
+        cl = glo0 + cx / nx * (glo1 - glo0)
+        cr = glo0 + (cx + 1) / nx * (glo1 - glo0)
+        cb = gla0 + cy / ny * (gla1 - gla0)
+        ct = gla0 + (cy + 1) / ny * (gla1 - gla0)
         xL, xR, yT, yB = px(cl), px(cr), py(ct), py(cb)
         t = (v - vmin) / (vmax - vmin) if vmax > vmin else 0.5
         rects.append(
             f'<rect x="{xL:.1f}" y="{yT:.1f}" width="{xR - xL:.1f}" height="{yB - yT:.1f}" '
-            f'fill="{_color(t)}" fill-opacity="0.45" stroke="#000" stroke-opacity="0.15"/>'
-            f'<text x="{(xL + xR) / 2:.1f}" y="{(yT + yB) / 2 + 4:.1f}" font-size="12" '
-            f'text-anchor="middle" fill="#fff" stroke="#000" stroke-width="0.4">{v:.1f}</text>')
+            f'fill="{_color(t)}" fill-opacity="0.5" stroke="#000" stroke-opacity="0.25"/>'
+            + lbl((xL + xR) / 2, (yT + yB) / 2 + 4, f"{v:.1f}", 13))
 
     mk = []
     for la, lo, name, color in (marks or []):
         mk.append(f'<circle cx="{px(lo):.1f}" cy="{py(la):.1f}" r="6" fill="{color}" '
                   f'stroke="#fff" stroke-width="1.5"/>'
-                  f'<text x="{px(lo) + 9:.1f}" y="{py(la) + 4:.1f}" font-size="13" '
-                  f'fill="#fff" stroke="#000" stroke-width="0.5">{name}</text>')
+                  + lbl(px(lo) + 30, py(la) + 4, name, 13))
 
     leg = (f'<rect x="0" y="0" width="{W}" height="22" fill="#000" fill-opacity="0.55"/>'
            f'<text x="8" y="15" font-size="13" fill="#fff">{label} · '
