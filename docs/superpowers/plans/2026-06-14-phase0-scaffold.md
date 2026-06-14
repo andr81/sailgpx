@@ -2,25 +2,26 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Создать автономный каркас системы `sailing/` в Obsidian-хранилище: разрешение путей через `.env`, scaffolding папок/хабов/справочников, шаблоны заметок, подключение будущих `sail-*` скиллов к `install.sh`, и docs-каркас (`CLAUDE.md` + заготовка `README.md`).
+**Goal:** Создать каркас системы: код (резолвер путей, `install.sh`, шаблоны, docs) в репозитории `sailgpx`, данные (`sailing/`) в Obsidian-хранилище; подключить будущие `sail-*` скиллы к репозиторному `install.sh`.
 
-**Architecture:** Все артефакты живут в `<vault>/sailing/` и `<vault>/tooling/`. Путь к трекам резолвится shell-функцией `tooling/sailenv.sh` (читает `sailing/.env`, дефолт — `sailing/tracks`). Скиллы (фазы 1+) симлинкуются в `~/.claude/skills/` через `tooling/install.sh`. Это фундамент; функциональные скиллы — отдельные планы.
+**Architecture:** Source of truth для кода — git-репозиторий `REPO`. У репы свой `tooling/install.sh`, симлинкующий `skills/sail-*` в `~/.claude/skills/` (Obsidian-`tooling` с `life-*` не трогаем). Путь к данным резолвится `tooling/sailenv.sh` из `REPO/.env`. Данные живут в `VAULT/sailing/` и под git не попадают.
 
-**Tech Stack:** Bash (POSIX/zsh-совместимый), Markdown + YAML frontmatter, Python 3 (только для валидации YAML в тестах). Git отсутствует и в хранилище, и в `projects/sailgpx` → вместо `git commit` используем verification-чекпоинты (команда проверки в конце каждой задачи). Git-инициализацию не делаем.
+**Tech Stack:** Bash, Markdown + YAML frontmatter, Python 3 (валидация YAML в тестах). `REPO` под git → код коммитим обычными `git commit`. Vault не под git → для файлов данных используем verification-чекпоинты.
 
 **Соглашения путей в плане:**
+- `REPO` = `/Users/vita/projects/sailgpx`
 - `VAULT` = `/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian`
-- Все пути ниже — абсолютные, чтобы исполнялись из любого cwd.
+- Все пути в командах — абсолютные.
 
 ---
 
-### Task 1: Резолвер путей `tooling/sailenv.sh`
+### Task 1: Резолвер путей `tooling/sailenv.sh` (в репе)
 
-Общий sourcing-скрипт: вычисляет корень хранилища от `$HOME`, читает `sailing/.env`, экспортирует `SAILING_VAULT`, `SAILING_DIR`, `SAILING_TRACKS_DIR`. Не лежит под `skills/`, поэтому `install.sh` его не симлинкует. Позволяет переопределить `SAILING_VAULT` извне (для тестов).
+Sourcing-скрипт: само-локация по `BASH_SOURCE` (репа = родитель `tooling/`), читает `REPO/.env`, экспортирует `SAILING_REPO`, `SAILING_VAULT`, `SAILING_DIR`, `SAILING_TRACKS_DIR`. `SAILING_REPO`/`SAILING_VAULT` переопределяемы извне (для тестов).
 
 **Files:**
-- Create: `/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/sailenv.sh`
-- Test: `/Users/vita/projects/sailgpx/tests/test_sailenv.sh`
+- Create: `REPO/tooling/sailenv.sh`
+- Test: `REPO/tests/test_sailenv.sh`
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -29,55 +30,57 @@ Create `/Users/vita/projects/sailgpx/tests/test_sailenv.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-LIB="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/sailenv.sh"
+LIB="/Users/vita/projects/sailgpx/tooling/sailenv.sh"
 fail=0
 
-# Case 1: .env задаёт SAILING_TRACKS_DIR → используется он
-tmp1="$(mktemp -d)"; mkdir -p "$tmp1/sailing"
-printf 'SAILING_TRACKS_DIR=%s\n' "$tmp1/custom-tracks" > "$tmp1/sailing/.env"
-got="$(SAILING_VAULT="$tmp1" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_TRACKS_DIR\"")"
-[[ "$got" == "$tmp1/custom-tracks" ]] || { echo "FAIL case1: got=$got"; fail=1; }
+# Case 1: .env в репе задаёт SAILING_TRACKS_DIR → используется он
+repo1="$(mktemp -d)"
+printf 'SAILING_TRACKS_DIR=%s\n' "$repo1/custom-tracks" > "$repo1/.env"
+got="$(SAILING_REPO="$repo1" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_TRACKS_DIR\"")"
+[[ "$got" == "$repo1/custom-tracks" ]] || { echo "FAIL case1: got=$got"; fail=1; }
 
 # Case 2: нет .env → дефолт <vault>/sailing/tracks
-tmp2="$(mktemp -d)"; mkdir -p "$tmp2/sailing"
-got2="$(SAILING_VAULT="$tmp2" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_TRACKS_DIR\"")"
-[[ "$got2" == "$tmp2/sailing/tracks" ]] || { echo "FAIL case2: got=$got2"; fail=1; }
+repo2="$(mktemp -d)"; vault2="$(mktemp -d)"
+got2="$(SAILING_REPO="$repo2" SAILING_VAULT="$vault2" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_TRACKS_DIR\"")"
+[[ "$got2" == "$vault2/sailing/tracks" ]] || { echo "FAIL case2: got=$got2"; fail=1; }
 
-# Case 3: экспортирован SAILING_DIR
-got3="$(SAILING_VAULT="$tmp2" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_DIR\"")"
-[[ "$got3" == "$tmp2/sailing" ]] || { echo "FAIL case3: got=$got3"; fail=1; }
+# Case 3: SAILING_DIR = <vault>/sailing
+got3="$(SAILING_REPO="$repo2" SAILING_VAULT="$vault2" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_DIR\"")"
+[[ "$got3" == "$vault2/sailing" ]] || { echo "FAIL case3: got=$got3"; fail=1; }
 
-rm -rf "$tmp1" "$tmp2"
+rm -rf "$repo1" "$repo2" "$vault2"
 [[ $fail -eq 0 ]] && echo "PASS test_sailenv" || { echo "TESTS FAILED"; exit 1; }
 ```
 
 - [ ] **Step 2: Запустить тест — убедиться, что падает**
 
-Run: `bash /Users/vita/projects/sailgpx/tests/test_sailenv.sh`
-Expected: FAIL (файл `sailenv.sh` не существует → `source` ошибётся, ненулевой код выхода).
+Run: `mkdir -p /Users/vita/projects/sailgpx/tests && bash /Users/vita/projects/sailgpx/tests/test_sailenv.sh`
+Expected: FAIL (файл `sailenv.sh` не существует → `source` ошибётся).
 
 - [ ] **Step 3: Написать `sailenv.sh`**
 
-Create `/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/sailenv.sh`:
+Create `/Users/vita/projects/sailgpx/tooling/sailenv.sh`:
 
 ```bash
 #!/usr/bin/env bash
 # Резолвер путей парусной системы. Использование: source этот файл.
-# Экспортирует: SAILING_VAULT, SAILING_DIR, SAILING_TRACKS_DIR.
-# SAILING_VAULT можно переопределить извне (тесты); иначе вычисляется от $HOME.
+# Экспортирует: SAILING_REPO, SAILING_VAULT, SAILING_DIR, SAILING_TRACKS_DIR.
+# SAILING_REPO / SAILING_VAULT можно переопределить извне (тесты).
 
+_sailenv_self="${BASH_SOURCE[0]}"
+SAILING_REPO="${SAILING_REPO:-$(cd "$(dirname "$_sailenv_self")/.." && pwd)}"
 SAILING_VAULT="${SAILING_VAULT:-$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian}"
 SAILING_DIR="$SAILING_VAULT/sailing"
 
-if [[ -f "$SAILING_DIR/.env" ]]; then
+if [[ -f "$SAILING_REPO/.env" ]]; then
   set -a
   # shellcheck disable=SC1090
-  source "$SAILING_DIR/.env"
+  source "$SAILING_REPO/.env"
   set +a
 fi
 
 SAILING_TRACKS_DIR="${SAILING_TRACKS_DIR:-$SAILING_DIR/tracks}"
-export SAILING_VAULT SAILING_DIR SAILING_TRACKS_DIR
+export SAILING_REPO SAILING_VAULT SAILING_DIR SAILING_TRACKS_DIR
 ```
 
 - [ ] **Step 4: Запустить тест — убедиться, что проходит**
@@ -85,20 +88,23 @@ export SAILING_VAULT SAILING_DIR SAILING_TRACKS_DIR
 Run: `bash /Users/vita/projects/sailgpx/tests/test_sailenv.sh`
 Expected: `PASS test_sailenv`
 
-- [ ] **Step 5: Чекпоинт**
+- [ ] **Step 5: Commit**
 
-Run: `test -f "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/sailenv.sh" && echo OK`
-Expected: `OK`
+```bash
+cd /Users/vita/projects/sailgpx
+git add tooling/sailenv.sh tests/test_sailenv.sh
+git commit -m "feat(tooling): add sailenv.sh path resolver with tests"
+```
 
 ---
 
-### Task 2: `install.sh` — добавить глоб `sail-*`
+### Task 2: `tooling/install.sh` (репозиторный симлинкер `sail-*`)
 
-Текущий цикл симлинкует только `life-*`. Добавляем `sail-*` в тот же цикл и обновляем финальное сообщение. Guard `[[ -d "$src" ]] || continue` уже корректно пропускает несуществующий glob.
+Новый скрипт в репе (не правка vault'ового). Симлинкует `REPO/skills/sail-*` в `~/.claude/skills/`. Идемпотентен: корректный симлинк — no-op; неверный — перелинковать; реальная папка — бэкап и симлинк. `SRC_DIR` переопределяем через `SAIL_SKILLS_SRC` (для тестов), `DST` — через `CLAUDE_SKILLS_DIR`.
 
 **Files:**
-- Modify: `/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/install.sh`
-- Test: `/Users/vita/projects/sailgpx/tests/test_install.sh`
+- Create: `REPO/tooling/install.sh`
+- Test: `REPO/tests/test_install.sh`
 
 - [ ] **Step 1: Написать падающий тест**
 
@@ -107,24 +113,21 @@ Create `/Users/vita/projects/sailgpx/tests/test_install.sh`:
 ```bash
 #!/usr/bin/env bash
 set -euo pipefail
-VAULT="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian"
-INSTALL="$VAULT/tooling/install.sh"
+INSTALL="/Users/vita/projects/sailgpx/tooling/install.sh"
 fail=0
 
-# Тестовое окружение: фейковый SRC с dummy sail-foo и life-bar, отдельный DST
 work="$(mktemp -d)"
 src="$work/skills"; dst="$work/dst"
-mkdir -p "$src/sail-foo" "$src/life-bar" "$dst"
+mkdir -p "$src/sail-foo" "$src/sail-bar" "$dst"
 echo "x" > "$src/sail-foo/SKILL.md"
-echo "x" > "$src/life-bar/SKILL.md"
+echo "x" > "$src/sail-bar/SKILL.md"
 
-# install.sh резолвит SRC относительно своего расположения, поэтому копируем его в work
-cp "$INSTALL" "$work/install.sh"
-mkdir -p "$work/skills"   # уже есть
-CLAUDE_SKILLS_DIR="$dst" bash "$work/install.sh" >/dev/null
+SAIL_SKILLS_SRC="$src" CLAUDE_SKILLS_DIR="$dst" bash "$INSTALL" >/dev/null
 
 [[ -L "$dst/sail-foo" ]] || { echo "FAIL: sail-foo not symlinked"; fail=1; }
-[[ -L "$dst/life-bar" ]] || { echo "FAIL: life-bar not symlinked"; fail=1; }
+[[ -L "$dst/sail-bar" ]] || { echo "FAIL: sail-bar not symlinked"; fail=1; }
+# повторный прогон не падает (идемпотентность)
+SAIL_SKILLS_SRC="$src" CLAUDE_SKILLS_DIR="$dst" bash "$INSTALL" >/dev/null || { echo "FAIL: not idempotent"; fail=1; }
 
 rm -rf "$work"
 [[ $fail -eq 0 ]] && echo "PASS test_install" || { echo "TESTS FAILED"; exit 1; }
@@ -133,32 +136,60 @@ rm -rf "$work"
 - [ ] **Step 2: Запустить тест — убедиться, что падает**
 
 Run: `bash /Users/vita/projects/sailgpx/tests/test_install.sh`
-Expected: FAIL с `sail-foo not symlinked` (текущий цикл глобит только `life-*`).
+Expected: FAIL (`install.sh` не существует).
 
-- [ ] **Step 3: Изменить цикл и сообщение в `install.sh`**
+- [ ] **Step 3: Написать `install.sh`**
 
-В `/Users/vita/.../tooling/install.sh` заменить строку цикла:
-
-```bash
-for src in "$SRC_DIR"/life-*/; do
-```
-
-на:
+Create `/Users/vita/projects/sailgpx/tooling/install.sh`:
 
 ```bash
-for src in "$SRC_DIR"/life-*/ "$SRC_DIR"/sail-*/; do
-```
+#!/usr/bin/env bash
+# Симлинкует sail-* скиллы репозитория в ~/.claude/skills/.
+# Идемпотентен: верный симлинк -> no-op; неверный -> перелинк; реальная папка -> бэкап.
+set -euo pipefail
 
-И заменить финальное сообщение:
+TOOLING="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO="$(cd "$TOOLING/.." && pwd)"
+SRC_DIR="${SAIL_SKILLS_SRC:-$REPO/skills}"
+DST_DIR="${CLAUDE_SKILLS_DIR:-$HOME/.claude/skills}"
 
-```bash
-echo "life-* skills installed into $DST_DIR"
-```
+mkdir -p "$DST_DIR"
+timestamp="$(date +%Y%m%d-%H%M%S)"
+created=0; updated=0; skipped=0; backed_up=()
 
-на:
+shopt -s nullglob
+for src in "$SRC_DIR"/sail-*/; do
+  [[ -d "$src" ]] || continue
+  name="$(basename "$src")"
+  src_abs="${src%/}"
+  dst="$DST_DIR/$name"
 
-```bash
-echo "life-* / sail-* skills installed into $DST_DIR"
+  if [[ -L "$dst" ]]; then
+    current="$(readlink "$dst")"
+    if [[ "$current" == "$src_abs" ]]; then
+      echo "✓ $name already linked"; skipped=$((skipped + 1)); continue
+    fi
+    rm "$dst"; ln -s "$src_abs" "$dst"
+    echo "↻ $name relinked → $src_abs"; updated=$((updated + 1)); continue
+  fi
+
+  if [[ -e "$dst" ]]; then
+    backup="${dst}.bak.${timestamp}"; mv "$dst" "$backup"; backed_up+=("$backup")
+  fi
+
+  ln -s "$src_abs" "$dst"
+  echo "+ $name linked → $src_abs"; created=$((created + 1))
+done
+
+echo ""
+echo "sail-* skills installed into $DST_DIR"
+echo "  created: $created"
+echo "  updated: $updated"
+echo "  unchanged: $skipped"
+if (( ${#backed_up[@]} > 0 )); then
+  echo "  backed up (real dirs at target path):"
+  for b in "${backed_up[@]}"; do echo "    $b"; done
+fi
 ```
 
 - [ ] **Step 4: Запустить тест — убедиться, что проходит**
@@ -166,233 +197,81 @@ echo "life-* / sail-* skills installed into $DST_DIR"
 Run: `bash /Users/vita/projects/sailgpx/tests/test_install.sh`
 Expected: `PASS test_install`
 
-- [ ] **Step 5: Чекпоинт — реальный прогон не ломает life-* симлинки**
+- [ ] **Step 5: Commit**
 
-Run: `bash "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/install.sh"`
-Expected: вывод содержит `life-* / sail-* skills installed`; строки `✓ life-ingest already linked` и т.п. (sail-* пока нет — это нормально).
+```bash
+cd /Users/vita/projects/sailgpx
+git add tooling/install.sh tests/test_install.sh
+git commit -m "feat(tooling): add install.sh symlinking sail-* skills with tests"
+```
 
 ---
 
-### Task 3: Scaffolding папок, `.env`, индексы
-
-Создать дерево `sailing/`, файл `.env`, и пустые JSON-индексы.
+### Task 3: Каталоги репы, `.env(.example)`, `.gitignore`
 
 **Files:**
-- Create: `<vault>/sailing/.env`
-- Create: `<vault>/sailing/.race-index.json`
-- Create: `<vault>/sailing/.weather-accuracy.json`
-- Create: каталоги `<vault>/sailing/{boats,venues,tracks,.templates}`
+- Create: `REPO/.env.example`, `REPO/.env`
+- Modify: `REPO/.gitignore`
+- Create: каталоги `REPO/{skills,templates}`
 
-- [ ] **Step 1: Создать каталоги**
+- [ ] **Step 1: Создать каталоги репы**
 
 Run:
 ```bash
-VAULT="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian"
-mkdir -p "$VAULT/sailing/boats" "$VAULT/sailing/venues" "$VAULT/sailing/tracks" "$VAULT/sailing/.templates"
+mkdir -p /Users/vita/projects/sailgpx/skills /Users/vita/projects/sailgpx/templates
 ```
-Expected: без вывода (успех).
+Expected: без вывода.
 
-- [ ] **Step 2: Создать `.env` с дефолтным путём треков**
+- [ ] **Step 2: `.env.example` (коммитится) и `.env` (локальный)**
 
-Create `<vault>/sailing/.env`:
+Create `/Users/vita/projects/sailgpx/.env.example`:
 
 ```
 # Корень папок гонок. По умолчанию <vault>/sailing/tracks.
-# Можно указать иной путь (напр. на внешнем диске).
 SAILING_TRACKS_DIR=/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/tracks
 ```
 
-- [ ] **Step 3: Инициализировать JSON-индексы**
+Create `/Users/vita/projects/sailgpx/.env` с тем же содержимым (копия для локального запуска).
 
-Create `<vault>/sailing/.race-index.json`:
+- [ ] **Step 3: Добавить `.env` в `.gitignore`**
 
-```json
-{}
+В `/Users/vita/projects/sailgpx/.gitignore` добавить строку (в конец):
+
+```
+# local env
+.env
 ```
 
-Create `<vault>/sailing/.weather-accuracy.json`:
-
-```json
-{}
-```
-
-- [ ] **Step 4: Чекпоинт — .env резолвится через sailenv.sh**
+- [ ] **Step 4: Чекпоинт — .env резолвится и не трекается**
 
 Run:
 ```bash
-source "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/tooling/sailenv.sh"
-echo "$SAILING_TRACKS_DIR"
-python3 -c "import json; json.load(open('$SAILING_DIR/.race-index.json')); json.load(open('$SAILING_DIR/.weather-accuracy.json')); print('json ok')"
+cd /Users/vita/projects/sailgpx
+source tooling/sailenv.sh && echo "tracks=$SAILING_TRACKS_DIR"
+git check-ignore .env && echo ".env ignored OK"
 ```
-Expected: путь к `.../sailing/tracks` и `json ok`.
+Expected: путь к `.../sailing/tracks` и `.env ignored OK`.
 
----
+- [ ] **Step 5: Commit**
 
-### Task 4: Хабы и справочники (`_index`, venue, пример лодки)
-
-Markdown-файлы с валидным frontmatter по схемам спеки §3.
-
-**Files:**
-- Create: `<vault>/sailing/_index.md`
-- Create: `<vault>/sailing/boats/_index.md`
-- Create: `<vault>/sailing/venues/minskoe-more.md`
-- Create: `<vault>/sailing/boats/laser.md`
-
-- [ ] **Step 1: `sailing/_index.md` (хаб гонок)**
-
-Create `<vault>/sailing/_index.md`:
-
-```markdown
----
-title: "Парусные гонки"
-type: catalog
-domain: sailing
-created: 2026-06-14
-updated: 2026-06-14
-summary: "Хаб системы: гонки, лодки, акватории."
----
-
-# Парусные гонки
-
-Справочники: [[boats/_index|Лодки]] · [[venues/minskoe-more|Минское море]]
-
-## Все гонки
-
-```dataview
-TABLE date, event, class, course_type, weather_actual.wind_dir_card AS "ветер", weather_actual.wind_speed_kt AS "kt", result.position AS "место", status
-FROM "sailing/tracks"
-WHERE type = "sail-race"
-SORT date DESC
-```
-```
-
-- [ ] **Step 2: `sailing/boats/_index.md`**
-
-Create `<vault>/sailing/boats/_index.md`:
-
-```markdown
----
-title: "Лодки"
-type: catalog
-domain: sailing
-created: 2026-06-14
-updated: 2026-06-14
-summary: "Справочник лодок и классов."
----
-
-# Лодки
-
-```dataview
-TABLE class, rig, crew, hull_length_m AS "длина, м"
-FROM "sailing/boats"
-WHERE type = "sail-boat"
-SORT class ASC
-```
-```
-
-- [ ] **Step 3: `sailing/venues/minskoe-more.md` (координаты по факту треков)**
-
-Create `<vault>/sailing/venues/minskoe-more.md`:
-
-```markdown
----
-title: "Минское море"
-type: sail-venue
-slug: minskoe-more
-lat: 53.97
-lon: 27.38
-windguru_spots: [311332, 110353]
-landmarks: ""
-prevailing_winds: ""
-created: 2026-06-14
-updated: 2026-06-14
-summary: "Заславское водохранилище под Минском — основная акватория."
----
-
-# Минское море
-
-Заславское водохранилище (~53.97 N, 27.38 E).
-
-- Прогноз/архив: Open-Meteo по `lat/lon` выше.
-- Windguru: [311332](https://www.windguru.cz/311332) · [110353 ExtremeClub](https://www.windguru.cz/110353)
-
-## Ориентиры и заметки
-```
-
-- [ ] **Step 4: `sailing/boats/laser.md` (пример лодки)**
-
-Create `<vault>/sailing/boats/laser.md`:
-
-```markdown
----
-title: "Laser (ILCA)"
-type: sail-boat
-slug: laser
-class: "Laser"
-hull_length_m: 4.23
-crew: 1
-sail_area_m2: 7.06
-rig: dinghy
-upwind_twa: 45
-downwind_twa: 150
-polar: null
-created: 2026-06-14
-updated: 2026-06-14
-tags: []
-summary: "Швертбот-одиночка; лавировка ~45°, спуск ~150° (идёт галсами вниз)."
----
-
-## Заметки
-
-## Выходы и гонки
-
-```dataview
-TABLE date, event, result.position AS "место", weather_actual.wind_speed_kt AS "ветер kt"
-FROM "sailing/tracks"
-WHERE type = "sail-race" AND boat = "laser"
-SORT date DESC
-```
-```
-
-- [ ] **Step 5: Чекпоинт — frontmatter валиден**
-
-Run:
 ```bash
-VAULT="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian"
-python3 - <<'PY'
-import re, sys
-base="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing"
-files=["_index.md","boats/_index.md","venues/minskoe-more.md","boats/laser.md"]
-try:
-    import yaml
-    have_yaml=True
-except Exception:
-    have_yaml=False
-for f in files:
-    txt=open(f"{base}/{f}",encoding="utf-8").read()
-    m=re.match(r"^---\n(.*?)\n---\n", txt, re.S)
-    assert m, f"no frontmatter in {f}"
-    if have_yaml:
-        yaml.safe_load(m.group(1))
-print("frontmatter ok (yaml parsed)" if have_yaml else "frontmatter present (yaml lib absent, skipped parse)")
-PY
+cd /Users/vita/projects/sailgpx
+git add .env.example .gitignore
+git commit -m "chore: add .env.example and gitignore .env"
 ```
-Expected: `frontmatter ok ...` или `frontmatter present ...` без AssertionError.
 
 ---
 
-### Task 5: Шаблоны заметок (`.templates/`)
+### Task 4: Шаблоны заметок (`REPO/templates/`)
 
-Канонические шаблоны, которые скиллы фазы 1 будут копировать. Плейсхолдеры в фигурных скобках `{{...}}` заполняет скилл.
+Канонические шаблоны, которые скиллы фазы 1 копируют в vault. Плейсхолдеры `{{...}}` заполняет скилл.
 
 **Files:**
-- Create: `<vault>/sailing/.templates/sail-race.md`
-- Create: `<vault>/sailing/.templates/sail-boat.md`
-- Create: `<vault>/sailing/.templates/sail-venue.md`
+- Create: `REPO/templates/sail-race.md`, `REPO/templates/sail-boat.md`, `REPO/templates/sail-venue.md`
 
 - [ ] **Step 1: `sail-race.md`**
 
-Create `<vault>/sailing/.templates/sail-race.md`:
+Create `/Users/vita/projects/sailgpx/templates/sail-race.md`:
 
 ```markdown
 ---
@@ -439,7 +318,7 @@ summary: ""
 
 - [ ] **Step 2: `sail-boat.md`**
 
-Create `<vault>/sailing/.templates/sail-boat.md`:
+Create `/Users/vita/projects/sailgpx/templates/sail-boat.md`:
 
 ```markdown
 ---
@@ -474,7 +353,7 @@ SORT date DESC
 
 - [ ] **Step 3: `sail-venue.md`**
 
-Create `<vault>/sailing/.templates/sail-venue.md`:
+Create `/Users/vita/projects/sailgpx/templates/sail-venue.md`:
 
 ```markdown
 ---
@@ -496,104 +375,82 @@ summary: ""
 ## Ориентиры и заметки
 ```
 
-- [ ] **Step 4: Чекпоинт — все шаблоны на месте**
+- [ ] **Step 4: Чекпоинт + Commit**
 
 Run:
 ```bash
-T="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/.templates"
-for f in sail-race sail-boat sail-venue; do test -f "$T/$f.md" || { echo "MISSING $f"; exit 1; }; done
+cd /Users/vita/projects/sailgpx
+for f in sail-race sail-boat sail-venue; do test -f "templates/$f.md" || { echo "MISSING $f"; exit 1; }; done
 echo "templates ok"
+git add templates/
+git commit -m "feat(templates): add sail-race / sail-boat / sail-venue note templates"
 ```
-Expected: `templates ok`
+Expected: `templates ok`, затем успешный коммит.
 
 ---
 
-### Task 6: `sailing/CLAUDE.md` (правила подсистемы для агента)
+### Task 5: `REPO/CLAUDE.md` (правила проекта) и `REPO/README.md` (заготовка)
 
 **Files:**
-- Create: `<vault>/sailing/CLAUDE.md`
+- Create: `REPO/CLAUDE.md`, `REPO/README.md`
 
-- [ ] **Step 1: Написать `CLAUDE.md`**
+- [ ] **Step 1: `CLAUDE.md`**
 
-Create `<vault>/sailing/CLAUDE.md`:
+Create `/Users/vita/projects/sailgpx/CLAUDE.md`:
 
 ```markdown
-# Sailing — правила подсистемы
+# sailgpx — правила проекта
 
-Автономная парусная подсистема внутри Obsidian-хранилища. Дополняет, не заменяет
-корневой `CLAUDE.md`. Полный дизайн: `/Users/vita/projects/sailgpx/docs/superpowers/specs/2026-06-14-sailing-system-design.md`.
+Код парусной системы (скиллы, tooling, анализатор, шаблоны). Данные — в Obsidian-vault
+(`<vault>/sailing/`), под git НЕ попадают. Полный дизайн:
+`docs/superpowers/specs/2026-06-14-sailing-system-design.md`.
 
-## Границы
-- Работаем только внутри `sailing/`. Не трогать остальной vault и `Hobbies/Sailing/`.
-- Никаких `[[wiki-link]]` наружу `sailing/`.
+## Раскладка
+- Код — здесь (`REPO`). Данные — `<vault>/sailing/`. Obsidian-`tooling` (`life-*`) не трогать.
+- Скиллы — `skills/sail-*/SKILL.md`; шаблоны заметок — `templates/`.
 
 ## Пути
-- Корень треков — из `sailing/.env` (`SAILING_TRACKS_DIR`); резолвить через
-  `source <vault>/tooling/sailenv.sh`, не хардкодить.
-- Вложения гонки — только в `<папка-гонки>/files/`; ссылки в заметке с префиксом `files/`.
+- Путь треков — из `REPO/.env` (`SAILING_TRACKS_DIR`); резолвить `source tooling/sailenv.sh`,
+  не хардкодить. `.env` в `.gitignore`; образец — `.env.example`.
+
+## Команды
+- Тесты: `bash tests/*.sh`.
+- Установка скиллов (симлинки в `~/.claude/skills/`): `bash tooling/install.sh`.
+- Анализатор (фаза 3): зависимости `pip install gpxpy pandas numpy scipy haversine`.
 
 ## Единицы
 - Дистанции — nm, скорости и ветер — kt, направления — градусы (0°=N, по часовой).
-
-## Frontmatter
-- Имена полей — латиница, значения — русский.
-- Slug папок гонок и файлов — латиница: `YYYY-MM-DD-<event-slug>[-r<N>]`.
-- Ключи поиска похожих: `venue`, `wind_dir_card`, `wind_bucket`, `course_type`,
-  `distance_nm`, `class`.
-
-## Неприкосновенное
-- Секцию `## Мысли и инсайты` и любой пользовательский текст НЕ перезаписывать.
-- Авто-контент только между маркерами `<!-- sail:auto:start <name> -->` …
-  `<!-- sail:auto:end <name> -->`.
-
-## Данные
-- GPX дедуплицируем по sha256 в `.race-index.json`. Данные не выдумывать — пустое
-  поле остаётся пустым.
-
-## Команды
-- Переустановить скиллы: `bash <vault>/tooling/install.sh`.
-- Анализатор (фаза 3): `python3` из каталога скилла `sail-analyze` (зависимости:
-  `gpxpy pandas numpy scipy haversine`).
 
 ## Скиллы
 - `/sail-race` — вести гонку (new/update/import).
 - `/sail-weather` — погода в заголовки (forecast/actual/ranking).
 - `/sail-analyze` — анализ трека (метрики + рендер).
 - `/sail-recall` — похожие гонки + инсайты.
-Подробности и порядок — в `README.md`.
+Подробности и порядок обработки — в `README.md`.
+
+Не раздувать: детали — в README/спеку, здесь держать правила.
 ```
 
-- [ ] **Step 2: Чекпоинт**
+- [ ] **Step 2: `README.md` (заготовка)**
 
-Run: `test -f "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/CLAUDE.md" && head -1 "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/CLAUDE.md"`
-Expected: `# Sailing — правила подсистемы`
-
----
-
-### Task 7: `sailing/README.md` (заготовка)
-
-Каркас README; разделы скиллов дописываются по мере их реализации (фазы 1–4), финальный проход — фаза 5.
-
-**Files:**
-- Create: `<vault>/sailing/README.md`
-
-- [ ] **Step 1: Написать заготовку `README.md`**
-
-Create `<vault>/sailing/README.md`:
+Create `/Users/vita/projects/sailgpx/README.md`:
 
 ```markdown
-# Парусная система (sailing/)
+# Парусная система (sailgpx)
 
 Подготовка к гонкам и их разбор: заметки по гонке, прогноз и фактическая погода,
 импорт GPS-треков, анализ трека как тренер-тактик, поиск похожих гонок и инсайты.
 
-> Статус: каркас (фаза 0). Скиллы добавляются по мере реализации — см. план
-> `/Users/vita/projects/sailgpx/docs/superpowers/plans/`.
+**Код** — в этом репозитории. **Данные** (заметки, треки, справочники) — в Obsidian-vault
+`<vault>/sailing/`.
+
+> Статус: каркас (фаза 0). Скиллы добавляются по мере реализации — см.
+> `docs/superpowers/plans/`.
 
 ## Установка
 
-1. Путь треков: при необходимости поправь `sailing/.env` (`SAILING_TRACKS_DIR`).
-2. Скиллы: `bash <vault>/tooling/install.sh` (симлинкует `sail-*` в `~/.claude/skills/`).
+1. `cp .env.example .env` и при необходимости поправь `SAILING_TRACKS_DIR`.
+2. `bash tooling/install.sh` — симлинкует `skills/sail-*` в `~/.claude/skills/`.
 3. Зависимости анализатора (фаза 3): `pip install gpxpy pandas numpy scipy haversine`.
 
 ## Скиллы
@@ -623,7 +480,7 @@ Create `<vault>/sailing/README.md`:
 ## Структура и формат
 
 Структура папок и frontmatter-схемы — в дизайн-спеке
-`/Users/vita/projects/sailgpx/docs/superpowers/specs/2026-06-14-sailing-system-design.md`.
+`docs/superpowers/specs/2026-06-14-sailing-system-design.md`.
 
 ## Единицы и конвенции
 
@@ -631,41 +488,259 @@ Create `<vault>/sailing/README.md`:
 - Секция «Мысли и инсайты» — твоя, агент её не трогает.
 ```
 
-- [ ] **Step 2: Чекпоинт**
-
-Run: `test -f "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/README.md" && grep -q "Типовой порядок" "/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing/README.md" && echo OK`
-Expected: `OK`
-
----
-
-### Task 8: Финальная проверка фазы 0
-
-- [ ] **Step 1: Полный smoke-тест каркаса**
+- [ ] **Step 3: Чекпоинт + Commit**
 
 Run:
 ```bash
-bash /Users/vita/projects/sailgpx/tests/test_sailenv.sh
-bash /Users/vita/projects/sailgpx/tests/test_install.sh
+cd /Users/vita/projects/sailgpx
+test -f CLAUDE.md && grep -q "Типовой порядок" README.md && echo OK
+git add CLAUDE.md README.md
+git commit -m "docs: add project CLAUDE.md and README skeleton"
+```
+Expected: `OK`, затем успешный коммит.
+
+---
+
+### Task 6: Scaffolding данных в vault (`VAULT/sailing/`)
+
+Каталоги, JSON-индексы и markdown-справочники в хранилище. **Не под git** → проверяем чекпоинтами.
+
+**Files (в VAULT, без git):**
+- Create: каталоги `VAULT/sailing/{boats,venues,tracks}`
+- Create: `VAULT/sailing/.race-index.json`, `VAULT/sailing/.weather-accuracy.json`
+- Create: `VAULT/sailing/_index.md`, `boats/_index.md`, `venues/minskoe-more.md`, `boats/laser.md`
+- Create: `VAULT/sailing/CLAUDE.md`
+
+- [ ] **Step 1: Каталоги и JSON-индексы**
+
+Run:
+```bash
 VAULT="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian"
-for p in sailing/.env sailing/.race-index.json sailing/.weather-accuracy.json \
-         sailing/_index.md sailing/boats/_index.md sailing/venues/minskoe-more.md \
-         sailing/boats/laser.md sailing/CLAUDE.md sailing/README.md \
-         sailing/.templates/sail-race.md sailing/.templates/sail-boat.md sailing/.templates/sail-venue.md \
-         tooling/sailenv.sh; do
-  test -e "$VAULT/$p" || { echo "MISSING $p"; exit 1; }
+mkdir -p "$VAULT/sailing/boats" "$VAULT/sailing/venues" "$VAULT/sailing/tracks"
+printf '{}\n' > "$VAULT/sailing/.race-index.json"
+printf '{}\n' > "$VAULT/sailing/.weather-accuracy.json"
+echo "dirs+json ok"
+```
+Expected: `dirs+json ok`.
+
+- [ ] **Step 2: `sailing/_index.md` (хаб гонок)**
+
+Create `<VAULT>/sailing/_index.md`:
+
+```markdown
+---
+title: "Парусные гонки"
+type: catalog
+domain: sailing
+created: 2026-06-14
+updated: 2026-06-14
+summary: "Хаб системы: гонки, лодки, акватории."
+---
+
+# Парусные гонки
+
+Справочники: [[boats/_index|Лодки]] · [[venues/minskoe-more|Минское море]]
+
+## Все гонки
+
+```dataview
+TABLE date, event, class, course_type, weather_actual.wind_dir_card AS "ветер", weather_actual.wind_speed_kt AS "kt", result.position AS "место", status
+FROM "sailing/tracks"
+WHERE type = "sail-race"
+SORT date DESC
+```
+```
+
+- [ ] **Step 3: `sailing/boats/_index.md`**
+
+Create `<VAULT>/sailing/boats/_index.md`:
+
+```markdown
+---
+title: "Лодки"
+type: catalog
+domain: sailing
+created: 2026-06-14
+updated: 2026-06-14
+summary: "Справочник лодок и классов."
+---
+
+# Лодки
+
+```dataview
+TABLE class, rig, crew, hull_length_m AS "длина, м"
+FROM "sailing/boats"
+WHERE type = "sail-boat"
+SORT class ASC
+```
+```
+
+- [ ] **Step 4: `sailing/venues/minskoe-more.md`**
+
+Create `<VAULT>/sailing/venues/minskoe-more.md`:
+
+```markdown
+---
+title: "Минское море"
+type: sail-venue
+slug: minskoe-more
+lat: 53.97
+lon: 27.38
+windguru_spots: [311332, 110353]
+landmarks: ""
+prevailing_winds: ""
+created: 2026-06-14
+updated: 2026-06-14
+summary: "Заславское водохранилище под Минском — основная акватория."
+---
+
+# Минское море
+
+Заславское водохранилище (~53.97 N, 27.38 E).
+
+- Прогноз/архив: Open-Meteo по `lat/lon` выше.
+- Windguru: [311332](https://www.windguru.cz/311332) · [110353 ExtremeClub](https://www.windguru.cz/110353)
+
+## Ориентиры и заметки
+```
+
+- [ ] **Step 5: `sailing/boats/laser.md` (пример лодки)**
+
+Create `<VAULT>/sailing/boats/laser.md`:
+
+```markdown
+---
+title: "Laser (ILCA)"
+type: sail-boat
+slug: laser
+class: "Laser"
+hull_length_m: 4.23
+crew: 1
+sail_area_m2: 7.06
+rig: dinghy
+upwind_twa: 45
+downwind_twa: 150
+polar: null
+created: 2026-06-14
+updated: 2026-06-14
+tags: []
+summary: "Швертбот-одиночка; лавировка ~45°, спуск ~150° (идёт галсами вниз)."
+---
+
+## Заметки
+
+## Выходы и гонки
+
+```dataview
+TABLE date, event, result.position AS "место", weather_actual.wind_speed_kt AS "ветер kt"
+FROM "sailing/tracks"
+WHERE type = "sail-race" AND boat = "laser"
+SORT date DESC
+```
+```
+
+- [ ] **Step 6: `VAULT/sailing/CLAUDE.md` (лёгкие правила данных)**
+
+Create `<VAULT>/sailing/CLAUDE.md`:
+
+```markdown
+# Sailing (данные) — правила
+
+Автономная папка ДАННЫХ парусной системы. Код и скиллы — в репозитории
+`/Users/vita/projects/sailgpx` (`andr81/sailgpx`).
+
+## Границы
+- Работаем только внутри `sailing/`. Не трогать остальной vault и `Hobbies/Sailing/`.
+- Никаких `[[wiki-link]]` наружу `sailing/`.
+
+## Файлы и вложения
+- Вложения гонки — только в `<папка-гонки>/files/`; ссылки в заметке с префиксом `files/`.
+- Slug папок гонок и файлов — латиница: `YYYY-MM-DD-<event-slug>[-r<N>]`.
+
+## Единицы
+- Дистанции — nm, скорости и ветер — kt, направления — градусы (0°=N).
+
+## Frontmatter
+- Имена полей — латиница, значения — русский.
+- Ключи поиска похожих: `venue`, `wind_dir_card`, `wind_bucket`, `course_type`,
+  `distance_nm`, `class`.
+
+## Неприкосновенное
+- Секцию `## Мысли и инсайты` и любой пользовательский текст НЕ перезаписывать.
+- Авто-контент только между `<!-- sail:auto:start <name> -->` … `<!-- sail:auto:end <name> -->`.
+
+## Данные
+- GPX дедуплицируем по sha256 в `.race-index.json`. Данные не выдумывать — пустое поле
+  остаётся пустым.
+```
+
+- [ ] **Step 7: Чекпоинт — frontmatter валиден**
+
+Run:
+```bash
+python3 - <<'PY'
+import re
+base="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/sailing"
+files=["_index.md","boats/_index.md","venues/minskoe-more.md","boats/laser.md"]
+try:
+    import yaml; have=True
+except Exception:
+    have=False
+for f in files:
+    txt=open(f"{base}/{f}",encoding="utf-8").read()
+    m=re.match(r"^---\n(.*?)\n---\n", txt, re.S)
+    assert m, f"no frontmatter in {f}"
+    if have: yaml.safe_load(m.group(1))
+assert __import__("os").path.isfile(f"{base}/CLAUDE.md"), "no CLAUDE.md"
+print("vault scaffold ok (yaml parsed)" if have else "vault scaffold ok (yaml lib absent)")
+PY
+```
+Expected: `vault scaffold ok ...` без AssertionError. (Vault не под git — коммита нет.)
+
+---
+
+### Task 7: Финальная проверка фазы 0
+
+- [ ] **Step 1: Полный smoke-тест**
+
+Run:
+```bash
+cd /Users/vita/projects/sailgpx
+bash tests/test_sailenv.sh
+bash tests/test_install.sh
+# репо-артефакты
+for p in tooling/sailenv.sh tooling/install.sh .env.example templates/sail-race.md \
+         templates/sail-boat.md templates/sail-venue.md CLAUDE.md README.md; do
+  test -e "$p" || { echo "MISSING repo:$p"; exit 1; }
 done
+# vault-данные
+VAULT="/Users/vita/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian"
+for p in sailing/.race-index.json sailing/.weather-accuracy.json sailing/_index.md \
+         sailing/boats/_index.md sailing/venues/minskoe-more.md sailing/boats/laser.md \
+         sailing/CLAUDE.md; do
+  test -e "$VAULT/$p" || { echo "MISSING vault:$p"; exit 1; }
+done
+git status -sb
 echo "PHASE 0 OK"
 ```
-Expected: `PASS test_sailenv`, `PASS test_install`, затем `PHASE 0 OK`.
+Expected: `PASS test_sailenv`, `PASS test_install`, чистый/ожидаемый `git status`, затем `PHASE 0 OK`.
+
+- [ ] **Step 2: Push**
+
+```bash
+cd /Users/vita/projects/sailgpx
+git push
+```
+Expected: коммиты фазы 0 уходят в `origin/main`.
 
 ---
 
 ## Self-Review
 
-**Spec coverage (§8 row 0):** `.env` (Task 3) ✓ · `_index.md` (Task 4) ✓ · `boats/_index.md` (Task 4) ✓ · `venues/minskoe-more.md` (Task 4) ✓ · шаблоны заметок (Task 5) ✓ · правка `install.sh` глоб `sail-*` (Task 2) ✓ · `sailing/CLAUDE.md` (Task 6) ✓ · заготовка `README.md` (Task 7) ✓. Резолвер путей `sailenv.sh` (Task 1) — инфраструктура под `.env`, нужен скиллам фаз 1+. Покрытие полное.
+**Spec coverage (§8 row 0):** `REPO/tooling/sailenv.sh` (Task 1) ✓ · `REPO/tooling/install.sh` глоб `skills/sail-*` (Task 2) ✓ · `REPO/.env(.example)` (Task 3) ✓ · `REPO/templates/*` (Task 4) ✓ · `REPO/CLAUDE.md` + `README.md` (Task 5) ✓ · vault `sailing/CLAUDE.md`, `_index.md`, `boats/_index.md`, `venues/minskoe-more.md`, пример лодки, JSON-индексы (Task 6) ✓. Финальная проверка + push (Task 7). Покрытие полное.
 
-**Placeholder scan:** Шаблоны в Task 5 намеренно содержат `{{...}}` — это слоты для скиллов, не плейсхолдеры плана; их заполнение специфицируется в плане фазы 1. Прочих TODO/TBD нет.
+**Placeholder scan:** `{{...}}` в шаблонах (Task 4) — слоты для скиллов, не плейсхолдеры плана; заполнение — в плане фазы 1. Прочих TODO/TBD нет.
 
-**Type/имена consistency:** `SAILING_VAULT/SAILING_DIR/SAILING_TRACKS_DIR` одинаковы в Task 1 (определение), Task 3/4 (использование), Task 6 (документация). Auto-маркеры `<!-- sail:auto:start <name> -->` совпадают в шаблоне (Task 5) и CLAUDE.md (Task 6). Ключи frontmatter совпадают со спекой §3.
+**Type/имена consistency:** `SAILING_REPO/SAILING_VAULT/SAILING_DIR/SAILING_TRACKS_DIR` одинаковы в Task 1 (определение/тест), Task 3 (использование), Task 5 (документация). Переменные тестов `SAIL_SKILLS_SRC`/`CLAUDE_SKILLS_DIR` совпадают между `install.sh` (Task 2 Step 3) и его тестом (Task 2 Step 1). Auto-маркеры `<!-- sail:auto:start <name> -->` совпадают в шаблоне (Task 4) и vault CLAUDE.md (Task 6). Ключи frontmatter совпадают со спекой §3.
 
-**Примечание:** git отсутствует → шаги «Чекпоинт» заменяют коммиты. Если позже инициализируем git в хранилище — добавим `.race-index.json`/`.weather-accuracy.json`/`.env` в `.gitignore` (приватные данные), по аналогии с `Health/.ingest-index.json`.
+**Git:** `REPO` под git → реальные коммиты (Task 1–5) + push (Task 7). `.env` в `.gitignore` (Task 3). Vault-данные (Task 6) под git не идут — проверяются чекпоинтами.

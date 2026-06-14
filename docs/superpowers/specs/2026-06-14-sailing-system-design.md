@@ -6,25 +6,37 @@
 
 Набор скиллов и скриптов для подготовки к парусным гонкам и их разбора: ведение
 заметок по гонке, прогноз и фактическая погода, импорт GPS-треков, анализ трека как
-тренер-тактик, поиск похожих гонок и извлечение инсайтов. Данные живут в автономной
-папке Obsidian-хранилища; система не пересекается с остальным личным vault'ом.
+тренер-тактик, поиск похожих гонок и извлечение инсайтов.
+
+**Разделение код / данные:**
+
+- **Код** (скиллы, tooling, скрипты, шаблоны, тесты, docs) — в git-репозитории
+  `/Users/vita/projects/sailgpx` (`origin git@github.com:andr81/sailgpx.git`). Это
+  единственный source of truth для скиллов. У репы свой `tooling/install.sh`, который
+  симлинкует `skills/sail-*` в `~/.claude/skills/`.
+- **Данные** (заметки гонок, треки, справочники, индексы) — в автономной папке
+  `sailing/` Obsidian-хранилища; система не пересекается с остальным личным vault'ом.
+- Obsidian-`tooling/` (с `life-*` скиллами) **не трогаем** — он отдельный.
 
 ---
 
 ## 1. Контекст и принципы
 
-- Хранилище Obsidian: `$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/`.
-- Рабочая папка системы: `sailing/` (top-level, **автономная**). Существующая
+- Репозиторий кода: `/Users/vita/projects/sailgpx` (далее `REPO`).
+- Хранилище Obsidian: `$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Obsidian/`
+  (далее `VAULT`).
+- Папка данных системы: `VAULT/sailing/` (top-level, **автономная**). Существующая
   `Hobbies/Sailing/` (type: note) не трогается.
-- Корень папок гонок берётся из `.env` → `SAILING_TRACKS_DIR`
-  (по умолчанию `<vault>/sailing/tracks`). Скрипты НЕ хардкодят путь.
-- Конвенции наследуются из vault CLAUDE.md и `tooling/skills/life-*`:
+- Корень папок гонок берётся из `REPO/.env` → `SAILING_TRACKS_DIR`
+  (по умолчанию `VAULT/sailing/tracks`). Скрипты НЕ хардкодят путь — резолвят через
+  `REPO/tooling/sailenv.sh`.
+- Конвенции наследуются из vault CLAUDE.md и `life-*` скиллов:
   - frontmatter-driven; имена полей — **латиница**, значения — **русский**;
   - дедупликация вложений по **sha256** в JSON-индексе;
   - паттерн look-back / «похожие записи» (как динамика анализов) → основа поиска
     похожих гонок;
-  - скиллы живут в `tooling/skills/<name>/SKILL.md`, симлинкуются в
-    `~/.claude/skills/` через `tooling/install.sh`.
+  - скиллы живут в `REPO/skills/<name>/SKILL.md`, симлинкуются в `~/.claude/skills/`
+    через `REPO/tooling/install.sh` (глоб `skills/sail-*`).
 - **Единицы:** дистанции — морские мили (**nm**), скорости (лодки и ветра) — узлы
   (**kt**). Углы/направления — градусы (0°=N, по часовой). Координаты — WGS84.
 - Принцип YAGNI: схемы богатые, но любое поле опционально; пустое поле остаётся
@@ -34,8 +46,35 @@
 
 ## 2. Структура папок
 
+### 2.1. Репозиторий кода (`REPO = /Users/vita/projects/sailgpx`)
+
+```
+sailgpx/
+├── CLAUDE.md                      # правила проекта (Claude Code), корень репы
+├── README.md                      # скиллы, использование, порядок обработки
+├── .env                           # SAILING_TRACKS_DIR (в .gitignore)
+├── .env.example                   # коммитится — образец
+├── tooling/
+│   ├── install.sh                 # симлинкует skills/sail-* → ~/.claude/skills/
+│   └── sailenv.sh                 # резолвит VAULT + SAILING_TRACKS_DIR из .env
+├── skills/
+│   ├── sail-race/SKILL.md
+│   ├── sail-weather/SKILL.md
+│   ├── sail-analyze/              # SKILL.md + python-пакет анализатора
+│   └── sail-recall/SKILL.md
+├── templates/                     # шаблоны заметок, копируются скиллами в VAULT
+│   ├── sail-race.md
+│   ├── sail-boat.md
+│   └── sail-venue.md
+├── tests/
+└── docs/superpowers/{specs,plans}/
+```
+
+### 2.2. Данные в хранилище (`VAULT/sailing/`)
+
 ```
 sailing/
+├── CLAUDE.md                      # лёгкие правила работы с ДАННЫМИ в vault
 ├── _index.md                      # хаб: dataview-таблицы всех гонок
 ├── boats/
 │   ├── _index.md                  # таблица лодок
@@ -355,8 +394,9 @@ detect tacks/gybes (флип галса + пересечение оси ветр
 
 ## 7. Скиллы
 
-Все — в `tooling/skills/sail-*/SKILL.md`, симлинк через `install.sh` (добавить глоб
-`sail-*`). Имена slug'ов/папок — латиница; общение и контент — русский.
+Все — в `REPO/skills/sail-*/SKILL.md`, симлинк в `~/.claude/skills/` через
+`REPO/tooling/install.sh` (глоб `skills/sail-*`). Имена slug'ов/папок — латиница;
+общение и контент — русский. Пути к данным — через `source REPO/tooling/sailenv.sh`.
 
 ### 7.1. `/sail-race` — ведение гонки
 
@@ -405,16 +445,17 @@ detect tacks/gybes (флип галса + пересечение оси ветр
 
 | # | Артефакт | Содержит |
 |---|----------|----------|
-| 0 | Scaffold + docs-каркас | `.env` (`SAILING_TRACKS_DIR`), `sailing/_index.md`, `boats/_index.md`, `venues/minskoe-more.md`, шаблоны заметок, правка `install.sh` (глоб `sail-*`), `sailing/CLAUDE.md`, заготовка `sailing/README.md` |
+| 0 | Scaffold + docs-каркас | `REPO/tooling/sailenv.sh` + `install.sh` (глоб `skills/sail-*`), `REPO/.env(.example)`, `REPO/templates/*`, `REPO/CLAUDE.md`, заготовка `REPO/README.md`; данные в vault: `sailing/CLAUDE.md`, `_index.md`, `boats/_index.md`, `venues/minskoe-more.md`, пример лодки, JSON-индексы |
 | 1 | `/sail-race` | new/update/import, frontmatter-схема, GPX-парсер, `.race-index.json` |
 | 2 | `/sail-weather` | Open-Meteo мульти-модель forecast + archive, лог точности, Windguru-ссылки, кэш |
 | 3 | `/sail-analyze` | Python-пайплайн, метрики, рендер |
 | 4 | `/sail-recall` | поиск похожих + инсайты |
-| 5 | Финализация docs | дописать `sailing/README.md` под все реализованные скиллы; добавить строки `sail-*` в таблицу скиллов корневого `CLAUDE.md` хранилища |
+| 5 | Финализация docs | дописать `REPO/README.md` под все реализованные скиллы; добавить строки `sail-*` в таблицу скиллов корневого `CLAUDE.md` хранилища |
 
 Каждый пункт — отдельный цикл план→реализация. Сначала спроектировано всё (этот
 документ), далее сборка строго по порядку 0→1→2→3→4→5. `README.md` ведём инкрементально
 (каждый скилл при готовности дописывает свой раздел), финальный проход — на шаге 5.
+Код коммитим в `REPO`; данные в vault под git не попадают.
 
 ---
 
@@ -449,13 +490,14 @@ detect tacks/gybes (флип галса + пересечение оси ветр
 
 ## 11. Документация
 
-### 11.1. `sailing/README.md` (человекочитаемо, для пользователя)
+### 11.1. `REPO/README.md` (человекочитаемо, для пользователя)
 
 Разделы:
 
-1. **Что это** — 2–3 строки о системе.
-2. **Установка** — `.env` (`SAILING_TRACKS_DIR`), `bash tooling/install.sh`,
-   зависимости Python анализатора (`pip install gpxpy pandas numpy scipy haversine`).
+1. **Что это** — 2–3 строки о системе + разделение код(repo)/данные(vault).
+2. **Установка** — скопировать `.env.example` → `.env` (`SAILING_TRACKS_DIR`),
+   `bash tooling/install.sh`, зависимости Python анализатора
+   (`pip install gpxpy pandas numpy scipy haversine`).
 3. **Скиллы** — таблица: `/sail-race`, `/sail-weather`, `/sail-analyze`,
    `/sail-recall` — назначение, режимы, пример вызова.
 4. **Типовой порядок загрузки и обработки** (жизненный цикл гонки):
@@ -474,21 +516,32 @@ detect tacks/gybes (флип галса + пересечение оси ветр
 5. **Структура папок и формат заметки** — кратко, со ссылкой на эту спецификацию.
 6. **Единицы и конвенции** — nm/kt/градусы; что НЕ перезаписывается агентом.
 
-### 11.2. `sailing/CLAUDE.md` (для агента, по гайдам Claude Code)
+### 11.2. `REPO/CLAUDE.md` (основной, для агента, по гайдам Claude Code)
 
-Принципы: коротко, императивно, высокий сигнал, scoped к `sailing/`; не дублирует
-корневой CLAUDE.md, а дополняет для подсистемы. Содержит:
+Принципы: коротко, императивно, высокий сигнал. Правила работы над **кодом** проекта:
 
-- **Назначение и границы** — автономная подсистема; не трогать остальной vault и
-  `Hobbies/Sailing/`; никаких cross-links наружу.
-- **Пути** — корень гонок из `.env` `SAILING_TRACKS_DIR`, не хардкодить; вложения
-  только в `files/`, ссылки с префиксом `files/`.
-- **Единицы** — nm (дистанции), kt (скорости и ветер), градусы (0°=N).
+- **Назначение и раскладка** — код в `REPO`, данные в `VAULT/sailing/`; Obsidian-`tooling`
+  (`life-*`) не трогать.
+- **Пути** — путь треков из `REPO/.env` `SAILING_TRACKS_DIR`, резолвить через
+  `source tooling/sailenv.sh`, не хардкодить.
+- **Скиллы** — в `skills/sail-*/SKILL.md`; переустановка симлинков `bash tooling/install.sh`.
+- **Команды** — тесты (`bash tests/*.sh`), анализатор (зависимости
+  `gpxpy pandas numpy scipy haversine`).
+- **Единицы** — nm, kt, градусы (0°=N).
+- **Скиллы и ответственность** — одна строка на `/sail-*`, ссылки на README и эту спеку.
+- Не раздувать: детали — в README/спеку, в CLAUDE.md держать правила.
+
+### 11.3. `VAULT/sailing/CLAUDE.md` (лёгкий, правила работы с данными)
+
+Scoped к `sailing/` в vault; срабатывает при редактировании данных. Содержит:
+
+- **Границы** — автономная подсистема; не трогать остальной vault и `Hobbies/Sailing/`;
+  никаких cross-links наружу.
+- **Пути/вложения** — вложения только в `files/`, ссылки с префиксом `files/`.
+- **Единицы** — nm, kt, градусы (0°=N).
 - **Frontmatter** — латиница в именах полей, русский в значениях; slug папок гонок —
   латиница; ключи поиска `venue/wind_dir_card/wind_bucket/course_type/distance_nm/class`.
 - **Неприкосновенное** — секцию «Мысли и инсайты» и пользовательский текст не
   перезаписывать; авто-секции только между `<!-- sail:auto:start -->` … `<!-- sail:auto:end -->`.
 - **Дедуп** — GPX по sha256 в `.race-index.json`; данные не выдумывать, пустое — пустым.
-- **Команды** — как запустить анализатор, как переустановить скиллы (`install.sh`).
-- **Скиллы и ответственность** — одна строка на `/sail-*`, ссылки на README и эту спеку.
-- Не раздувать: при росте — детали в README/спеку, в CLAUDE.md держать правила.
+- Указатель на код/скиллы: репозиторий `REPO` (`andr81/sailgpx`).
