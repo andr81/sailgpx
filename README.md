@@ -22,7 +22,7 @@
 | `/sail-race` | вести гонку | new / update / import | ready |
 | `/sail-weather` | погода в заголовки | forecast / actual / ranking | ready |
 | `/sail-analyze` | анализ трека (метрики + SVG-рендер) | — | ready |
-| `/sail-recall` | похожие гонки + инсайты | — | planned |
+| `/sail-recall` | похожие гонки + инсайты | — | ready |
 
 ## Типовой порядок загрузки и обработки
 
