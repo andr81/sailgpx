@@ -19,7 +19,7 @@
 
 | Скилл | Назначение | Режимы | Статус |
 |-------|-----------|--------|--------|
-| `/sail-race` | вести гонку | new / update / import | planned |
+| `/sail-race` | вести гонку | new / update / import | ready |
 | `/sail-weather` | погода в заголовки | forecast / actual / ranking | planned |
 | `/sail-analyze` | анализ трека | — | planned |
 | `/sail-recall` | похожие гонки + инсайты | — | planned |

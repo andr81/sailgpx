@@ -32,9 +32,9 @@ Create `/Users/vita/projects/sailgpx/tests/fixtures/mini.gpx` — 3 точки, 
   <trk><trkseg>
     <trkpt lat="53.9684" lon="27.3868"><time>2026-06-13T08:00:00Z</time>
       <extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>2.5722</gpxtpx:speed><gpxtpx:course>10</gpxtpx:course></gpxtpx:TrackPointExtension></extensions></trkpt>
-    <trkpt lat="53.9686" lon="27.3869"><time>2026-06-13T08:00:01Z</time>
+    <trkpt lat="53.9686" lon="27.3869"><time>2026-06-13T08:01:00Z</time>
       <extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>5.1444</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
-    <trkpt lat="53.9688" lon="27.3870"><time>2026-06-13T08:00:02Z</time>
+    <trkpt lat="53.9688" lon="27.3870"><time>2026-06-13T08:02:00Z</time>
       <extensions><gpxtpx:TrackPointExtension><gpxtpx:speed>0</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>
   </trkseg></trk>
 </gpx>
@@ -49,8 +49,8 @@ Create `/Users/vita/projects/sailgpx/tests/fixtures/mini.gpx` — 3 точки, 
 <gpx version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
   <trk><trkseg>
     <trkpt lat="53.9684" lon="27.3868"><time>2026-06-13T08:00:00Z</time></trkpt>
-    <trkpt lat="53.9686" lon="27.3869"><time>2026-06-13T08:00:01Z</time></trkpt>
-    <trkpt lat="53.9688" lon="27.3870"><time>2026-06-13T08:00:02Z</time></trkpt>
+    <trkpt lat="53.9686" lon="27.3869"><time>2026-06-13T08:01:00Z</time></trkpt>
+    <trkpt lat="53.9688" lon="27.3870"><time>2026-06-13T08:02:00Z</time></trkpt>
   </trkseg></trk>
 </gpx>
 ```
@@ -82,7 +82,7 @@ check(pts[0].course == 10.0, f"pt0 course 10, got {pts[0].course}")
 check(pts[0].time is not None, "pt0 time parsed")
 
 st = basic_stats(pts)
-check(abs(st["duration_min"] - (2/60)) < 0.01, f"duration_min, got {st['duration_min']}")
+check(abs(st["duration_min"] - 2.0) < 0.05, f"duration_min ~2.0, got {st['duration_min']}")
 check(st["max_speed_kt"] == 10.0, f"max_speed_kt 10.0, got {st['max_speed_kt']}")
 check(st["distance_nm"] > 0, f"distance_nm > 0, got {st['distance_nm']}")
 
