@@ -13,7 +13,7 @@
 
 1. `cp .env.example .env` и при необходимости поправь `SAILING_TRACKS_DIR`.
 2. `bash tooling/install.sh` — симлинкует `skills/sail-*` в `~/.claude/skills/`.
-3. Зависимости анализатора (фаза 3): `pip install gpxpy pandas numpy scipy haversine`.
+3. Зависимостей нет — всё на stdlib Python 3 (анализатор тоже; рендер трека — SVG).
 
 ## Скиллы
 
@@ -21,7 +21,7 @@
 |-------|-----------|--------|--------|
 | `/sail-race` | вести гонку | new / update / import | ready |
 | `/sail-weather` | погода в заголовки | forecast / actual / ranking | ready |
-| `/sail-analyze` | анализ трека | — | planned |
+| `/sail-analyze` | анализ трека (метрики + SVG-рендер) | — | ready |
 | `/sail-recall` | похожие гонки + инсайты | — | planned |
 
 ## Типовой порядок загрузки и обработки
