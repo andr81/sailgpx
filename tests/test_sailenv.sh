@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-LIB="/Users/vita/projects/sailgpx/tooling/sailenv.sh"
+TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIB="$TESTS_DIR/../tooling/sailenv.sh"
 fail=0
 
 # Case 1: .env в репе задаёт SAILING_TRACKS_DIR → используется он
@@ -18,5 +19,12 @@ got2="$(SAILING_REPO="$repo2" SAILING_VAULT="$vault2" bash -c "source \"$LIB\"; 
 got3="$(SAILING_REPO="$repo2" SAILING_VAULT="$vault2" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_DIR\"")"
 [[ "$got3" == "$vault2/sailing" ]] || { echo "FAIL case3: got=$got3"; fail=1; }
 
-rm -rf "$repo1" "$repo2" "$vault2"
+# Case 4: путь с ПРОБЕЛАМИ в .env (значение в кавычках) резолвится без потерь
+repo4="$(mktemp -d)"
+spaced="$repo4/my tracks dir/with spaces"
+printf 'SAILING_TRACKS_DIR="%s"\n' "$spaced" > "$repo4/.env"
+got4="$(SAILING_REPO="$repo4" bash -c "source \"$LIB\"; printf '%s' \"\$SAILING_TRACKS_DIR\"")"
+[[ "$got4" == "$spaced" ]] || { echo "FAIL case4: got=$got4"; fail=1; }
+
+rm -rf "$repo1" "$repo2" "$vault2" "$repo4"
 [[ $fail -eq 0 ]] && echo "PASS test_sailenv" || { echo "TESTS FAILED"; exit 1; }
