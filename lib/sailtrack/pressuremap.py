@@ -54,6 +54,73 @@ def fetch_esri_png(x0, y0, x1, y1, w, h):
     return urllib.request.urlopen(req, timeout=30).read()
 
 
+def build_track_on_satellite(gpx_path, out_path, view_pad_frac=0.5, width=1000,
+                             marks=None,
+                             label="Трек (скорость): красный медленно → зелёный быстро"):
+    """Спутник (Esri) + GPS-трек, раскрашенный по скорости, совмещённые по координатам.
+    Заменяет внешний скриншот «карта + трек». Возвращает самодостаточный SVG."""
+    from .render import _color_by_speed
+    pts = parse_gpx(gpx_path)
+    lats = [p.lat for p in pts]
+    lons = [p.lon for p in pts]
+    dla = (max(lats) - min(lats)) * view_pad_frac
+    dlo = (max(lons) - min(lons)) * view_pad_frac
+    la0, la1 = min(lats) - dla, max(lats) + dla
+    lo0, lo1 = min(lons) - dlo, max(lons) + dlo
+    x0, y0 = merc(la0, lo0)
+    x1, y1 = merc(la1, lo1)
+    W = width
+    H = int(W * (y1 - y0) / (x1 - x0))
+
+    try:
+        png = fetch_esri_png(x0, y0, x1, y1, W, H)
+        b64 = base64.b64encode(png).decode()
+        bg = (f'<image x="0" y="0" width="{W}" height="{H}" '
+              f'xlink:href="data:image/png;base64,{b64}" '
+              f'href="data:image/png;base64,{b64}"/>')
+        bgrect = ""
+    except Exception:
+        bg = ""
+        bgrect = f'<rect width="{W}" height="{H}" fill="#9ab"/>'
+
+    def px(lon):
+        return (_R * math.radians(lon) - x0) / (x1 - x0) * W
+
+    def py(lat):
+        y = _R * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+        return (y1 - y) / (y1 - y0) * H
+
+    speeds = [p.speed_kt if p.speed_kt is not None else 0.0 for p in pts]
+    vmax = max(speeds) or 1.0
+    segs = []
+    for i in range(len(pts) - 1):
+        segs.append(
+            f'<line x1="{px(pts[i].lon):.1f}" y1="{py(pts[i].lat):.1f}" '
+            f'x2="{px(pts[i + 1].lon):.1f}" y2="{py(pts[i + 1].lat):.1f}" '
+            f'stroke="{_color_by_speed(speeds[i], vmax)}" stroke-width="3" stroke-opacity="0.95"/>')
+    dots = (f'<circle cx="{px(pts[0].lon):.1f}" cy="{py(pts[0].lat):.1f}" r="6" fill="#0f0" stroke="#fff" stroke-width="1.5"/>'
+            f'<circle cx="{px(pts[-1].lon):.1f}" cy="{py(pts[-1].lat):.1f}" r="6" fill="#000" stroke="#fff" stroke-width="1.5"/>')
+
+    def lbl(x, y, t, s=13):
+        return (f'<text x="{x:.1f}" y="{y:.1f}" font-size="{s}" font-weight="bold" '
+                f'text-anchor="middle" paint-order="stroke" style="paint-order:stroke" '
+                f'fill="#000" stroke="#fff" stroke-width="3" stroke-linejoin="round">{t}</text>')
+
+    mk = []
+    for la, lo, name, color in (marks or []):
+        mk.append(f'<circle cx="{px(lo):.1f}" cy="{py(la):.1f}" r="6" fill="{color}" '
+                  f'stroke="#fff" stroke-width="1.5"/>' + lbl(px(lo) + 32, py(la) + 4, name, 13))
+
+    leg = (f'<rect x="0" y="0" width="{W}" height="22" fill="#000" fill-opacity="0.55"/>'
+           f'<text x="8" y="15" font-size="13" fill="#fff">{label} (max {vmax:.1f} kt)</text>')
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" '
+           f'width="{W}" height="{H}" viewBox="0 0 {W} {H}">{bgrect}{bg}'
+           + "".join(segs) + dots + "".join(mk) + leg + "</svg>")
+    with open(out_path, "w", encoding="utf-8") as f:
+        f.write(svg)
+    return out_path
+
+
 def build_pressure_svg(grid_points, all_points, out_path, marks=None,
                        nx=12, ny=8, min_n=8, width=1000, view_pad_frac=0.6,
                        label="Среднее давление (скорость на лавировке, kt)"):
