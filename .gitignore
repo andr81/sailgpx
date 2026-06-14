@@ -8,3 +8,5 @@ venv/
 # editor
 .idea/
 .vscode/
+# local env
+.env
